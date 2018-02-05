@@ -1,0 +1,175 @@
+// PAM4 Eye Measurement from IEEE 802.3 120E
+defun find_IEEE120E_Hvals(BERContour, Vref){
+	decl numPts = sweep_size(BERContour)-1;
+	decl lower = BERContour[0::numPts/2-1];
+	decl upper = sort(BERContour[numPts/2::numPts-1],"ascending","time");
+	decl i_vmin = min_index(lower);
+	decl i_vmax = max_index(upper);
+	decl ll = lower[0::i_vmin];
+	decl lr = lower[i_vmin::sweep_size(lower)-1];
+	decl ul = upper[0::i_vmax];
+	decl ur = upper[i_vmax::sweep_size(upper)-1];
+	
+	decl TLll = indep(ll[min_index(abs(ll-Vref))::min_index(abs(ll-Vref))]);
+	decl TLul = indep(ul[min_index(abs(ul-Vref))::min_index(abs(ul-Vref))]);
+	decl TL = max([TLll,TLul]);
+	
+	decl TRlr = indep(lr[min_index(abs(lr-Vref))::min_index(abs(lr-Vref))]);
+	decl TRur = indep(ur[min_index(abs(ur-Vref))::min_index(abs(ur-Vref))]);
+	decl TR = min([TRlr,TRur]);
+	
+	decl TC = (TL+TR)/2;
+	decl H = TR-TL;
+	return [H,TC,TL,TR];
+}
+
+defun find_IEEE120E_Vvals(BERContour, TC, period){
+	decl numPts = sweep_size(BERContour)-1;
+	decl lower = BERContour[0::numPts/2-1];
+	decl upper = sort(BERContour[numPts/2::numPts-1],"ascending","time");
+	decl i_upp = find(indep(upper)>TC-period*0.025 && indep(upper)<TC+period*0.025);
+	decl CDF1 = mean(upper[i_upp[0]::i_upp[sweep_size(i_upp)-1]]);
+	decl i_low = find(indep(lower)>TC-period*0.025 && indep(lower)<TC+period*0.025);
+	decl CDF0 = mean(lower[i_low[0]::i_low[sweep_size(i_low)-1]]);
+	decl V = CDF1 - CDF0;
+	decl VC = (CDF0+CDF1)/2;
+	
+	return [V,VC,CDF0,CDF1];
+}
+
+
+defun EyeMeasurement_IEEE120E(BERContour0, BERContour1, BERContour2, period){
+	decl H0vals_mid = find_IEEE120E_Hvals(BERContour1[1,::],0);
+	decl TC_mid = H0vals_mid[1];
+	
+	decl Vvals_mid = find_IEEE120E_Vvals(BERContour1[0,::],TC_mid,period);
+	decl VC_mid = Vvals_mid[1];
+	decl V_mid = Vvals_mid[0];
+	decl Hvals_mid = find_IEEE120E_Hvals(BERContour1[0,::],VC_mid);
+	decl H_mid = Hvals_mid[0];
+	
+	decl Vvals_upp = find_IEEE120E_Vvals(BERContour2[0,::],TC_mid,period);
+	decl VC_upp = Vvals_upp[1];
+	decl V_upp = Vvals_upp[0];
+	decl Hvals_upp = find_IEEE120E_Hvals(BERContour2[0,::],VC_upp);
+	decl H_upp = Hvals_upp[0];
+	
+	decl Vvals_low = find_IEEE120E_Vvals(BERContour0[0,::],TC_mid,period);
+	decl VC_low = Vvals_low[1];
+	decl V_low = Vvals_low[0];
+	decl Hvals_low = find_IEEE120E_Hvals(BERContour0[0,::],VC_low);
+	decl H_low = Hvals_low[0];
+	
+	decl HV_low = abs(H_low)*V_low;
+	decl HV_mid = abs(H_mid)*V_mid;
+	decl HV_upp = abs(H_upp)*V_upp;
+	
+	decl H_wc = min([H_low,H_mid,H_upp]);
+	decl V_wc = min([V_low,V_mid,V_upp]);
+	decl HV_wc = min([HV_low,HV_mid,HV_upp]);
+	
+	return [H_low,H_mid,H_upp,H_wc,V_low,V_mid,V_upp,V_wc,HV_low,HV_mid,HV_upp,HV_wc];
+}
+
+
+defun EyeMeasurement_IEEE120E_sweep(BERContour0, BERContour1, BERContour2, period){
+	decl dataDim = sweep_dim(BERContour0);
+	if (dataDim == 2){
+		return EyeMeasurement_IEEE120E(BERContour0, BERContour1, BERContour2, period);
+	} else if (dataDim > 2){
+		decl H_low = copy(BERContour0[::,0,0]);
+		decl H_mid = copy(BERContour0[::,0,0]);
+		decl H_upp = copy(BERContour0[::,0,0]);
+		decl H_wc = copy(BERContour0[::,0,0]);
+		decl V_low = copy(BERContour0[::,0,0]);
+		decl V_mid = copy(BERContour0[::,0,0]);
+		decl V_upp = copy(BERContour0[::,0,0]);
+		decl V_wc = copy(BERContour0[::,0,0]);
+		decl HV_low = copy(BERContour0[::,0,0]);
+		decl HV_mid = copy(BERContour0[::,0,0]);
+		decl HV_upp = copy(BERContour0[::,0,0]);
+		decl HV_wc = copy(BERContour0[::,0,0]);
+		decl sweepSize = sweep_size(H_low);
+		decl i_sv1 = 0;
+		if (dataDim ==3){
+			for (i_sv1=0; i_sv1 < sweepSize; i_sv1 = i_sv1 + 1){
+				decl HVresult = EyeMeasurement_IEEE120E(BERContour0[i_sv1,::,::], BERContour1[i_sv1,::,::], BERContour2[i_sv1,::,::], period);
+				H_low[i_sv1] = HVresult[0];
+				H_mid[i_sv1] = HVresult[1];
+				H_upp[i_sv1] = HVresult[2];
+				H_wc[i_sv1] = HVresult[3];
+				V_low[i_sv1] = HVresult[4];
+				V_mid[i_sv1] = HVresult[5];
+				V_upp[i_sv1] = HVresult[6];
+				V_wc[i_sv1] = HVresult[7];
+				HV_low[i_sv1] = HVresult[8];
+				HV_mid[i_sv1] = HVresult[9];
+				HV_upp[i_sv1] = HVresult[10];
+				HV_wc[i_sv1] = HVresult[11];
+			}
+		} else if (dataDim == 4){
+			decl i_sv2 = 0;
+			for (i_sv1=0; i_sv1 < sweepSize(1); i_sv1 = i_sv1 + 1){
+				for (i_sv2=0; i_sv2 < sweepSize(2); i_sv2 = i_sv2 + 1){
+					decl HVresult = EyeMeasurement_IEEE120E(BERContour0[i_sv1,i_sv2,::,::], BERContour1[i_sv1,i_sv2,::,::], BERContour2[i_sv1,i_sv2,::,::], period);
+					H_low[i_sv1,i_sv2] = HVresult[0];
+					H_mid[i_sv1,i_sv2] = HVresult[1];
+					H_upp[i_sv1,i_sv2] = HVresult[2];
+					H_wc[i_sv1,i_sv2] = HVresult[3];
+					V_low[i_sv1,i_sv2] = HVresult[4];
+					V_mid[i_sv1,i_sv2] = HVresult[5];
+					V_upp[i_sv1,i_sv2] = HVresult[6];
+					V_wc[i_sv1,i_sv2] = HVresult[7];
+					HV_low[i_sv1,i_sv2] = HVresult[8];
+					HV_mid[i_sv1,i_sv2] = HVresult[9];
+					HV_upp[i_sv1,i_sv2] = HVresult[10];
+					HV_wc[i_sv1,i_sv2] = HVresult[11];
+				}
+			}
+		} else if (dataDim == 5){
+			decl i_sv2 = 0;
+			decl i_sv3 = 0;
+			for (i_sv1=0; i_sv1 < sweepSize(1); i_sv1 = i_sv1 + 1){
+				for (i_sv2=0; i_sv2 < sweepSize(2); i_sv2 = i_sv2 + 1){
+					for (i_sv3=0; i_sv3 < sweepSize(3); i_sv3 = i_sv3 + 1){
+						decl HVresult = EyeMeasurement_IEEE120E(BERContour0[i_sv1,i_sv2,i_sv3,::,::], BERContour1[i_sv1,i_sv2,i_sv3,::,::], BERContour2[i_sv1,i_sv2,i_sv3,::,::], period);
+						H_low[i_sv1,i_sv2,i_sv3] = HVresult[0];
+						H_mid[i_sv1,i_sv2,i_sv3] = HVresult[1];
+						H_upp[i_sv1,i_sv2,i_sv3] = HVresult[2];
+						H_wc[i_sv1,i_sv2,i_sv3] = HVresult[3];
+						V_low[i_sv1,i_sv2,i_sv3] = HVresult[4];
+						V_mid[i_sv1,i_sv2,i_sv3] = HVresult[5];
+						V_upp[i_sv1,i_sv2,i_sv3] = HVresult[6];
+						V_wc[i_sv1,i_sv2,i_sv3] = HVresult[7];
+						HV_low[i_sv1,i_sv2,i_sv3] = HVresult[8];
+						HV_mid[i_sv1,i_sv2,i_sv3] = HVresult[9];
+						HV_upp[i_sv1,i_sv2,i_sv3] = HVresult[10];
+						HV_wc[i_sv1,i_sv2,i_sv3] = HVresult[11];
+					}
+				}
+			}
+		} else {
+			return -1;
+		}
+		return list(H_low,H_mid,H_upp,H_wc,V_low,V_mid,V_upp,V_wc,HV_low,HV_mid,HV_upp,HV_wc);
+	} else {
+		return -1;
+	}
+}
+
+
+
+
+//
+// ***** DO NOT DELETE THE FOLLOWING!!!!! *****
+//
+// This obviously isn't a C++ file, but the C++ editing mode works.
+//
+// Local Variables:
+// mode: c++
+// header-comment-character: ?*
+// header-prefix: "/* -*-C++-*-"
+// header-suffix: "*/"
+// End:
+//
+//
